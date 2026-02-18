@@ -6,6 +6,7 @@ import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.command.WaitContainerResultCallback;
+import com.github.dockerjava.api.model.Capability;
 import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.api.model.HostConfig;
 import org.slf4j.Logger;
@@ -29,6 +30,8 @@ public class CodeExecutionService {
 
     @Value("${arashbox.execution.memory-limit-mb:128}")
     private int memoryLimitMb;
+
+    private static final int MAX_OUTPUT_BYTES = 65_536; // 64KB
 
     private static final Map<String, String> LANGUAGE_IMAGES = Map.of(
         "python", "python:3.12-slim",
@@ -65,9 +68,13 @@ public class CodeExecutionService {
                     .withHostConfig(HostConfig.newHostConfig()
                             .withMemory((long) memoryLimitMb * 1024 * 1024)
                             .withCpuQuota(50000L) // 0.5 CPU
-                            .withNetworkMode("none") // No network access
-                            .withReadonlyRootfs(false)
+                            .withNetworkMode("none")
+                            .withReadonlyRootfs(true)
+                            .withTmpFs(Map.of("/tmp", "rw,noexec,size=10m"))
+                            .withPidsLimit(16L)
+                            .withCapDrop(Capability.ALL)
                     )
+                    .withUser("nobody")
                     .withTty(false)
                     .exec();
 
@@ -90,6 +97,7 @@ public class CodeExecutionService {
 
                         @Override
                         public void onNext(Frame frame) {
+                            if (stdout.length() + stderr.length() >= MAX_OUTPUT_BYTES) return;
                             String payload = new String(frame.getPayload());
                             switch (frame.getStreamType()) {
                                 case STDOUT -> stdout.append(payload);
@@ -114,7 +122,12 @@ public class CodeExecutionService {
                     .awaitStatusCode(timeoutSeconds, TimeUnit.SECONDS);
 
             long executionTime = System.currentTimeMillis() - startTime;
-            return new ExecutionResponse(stdout.toString(), stderr.toString(), exitCode, executionTime);
+            String out = stdout.toString();
+            String err = stderr.toString();
+            if (out.length() + err.length() >= MAX_OUTPUT_BYTES) {
+                out += "\n... output truncated (64KB limit)";
+            }
+            return new ExecutionResponse(out, err, exitCode, executionTime);
 
         } catch (Exception e) {
             log.error("Code execution failed", e);
