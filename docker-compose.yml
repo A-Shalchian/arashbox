@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: arashbox-postgres
+    environment:
+      POSTGRES_DB: arashbox
+      POSTGRES_USER: arashbox
+      POSTGRES_PASSWORD: arashbox
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: arashbox-redis
+    ports:
+      - "6379:6379"
+
+volumes:
+  pgdata:
