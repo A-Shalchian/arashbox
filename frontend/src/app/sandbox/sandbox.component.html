@@ -1,0 +1,44 @@
+<div class="sandbox">
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <select
+        [(ngModel)]="selectedLanguage"
+        (ngModelChange)="onLanguageChange()"
+        class="lang-select">
+        @for (lang of languages; track lang.value) {
+          <option [value]="lang.value">{{ lang.label }}</option>
+        }
+      </select>
+    </div>
+    <div class="toolbar-right">
+      <span class="hint">Ctrl+Enter to run</span>
+      <button
+        class="run-btn"
+        (click)="runCode()"
+        [disabled]="isRunning">
+        @if (isRunning) {
+          <span class="spinner"></span> Running...
+        } @else {
+          Run
+        }
+      </button>
+    </div>
+  </div>
+
+  <!-- Editor + Output split -->
+  <div class="split">
+    <div class="editor-pane">
+      <div #editorContainer class="editor-container"></div>
+    </div>
+    <div class="output-pane">
+      <div class="output-header">
+        <span>Output</span>
+        @if (executionTime > 0) {
+          <span class="exec-time">{{ executionTime }}ms</span>
+        }
+      </div>
+      <pre #outputContainer class="output-content">{{ output }}</pre>
+    </div>
+  </div>
+</div>
