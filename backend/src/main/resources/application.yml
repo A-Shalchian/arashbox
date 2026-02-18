@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: arashbox
+
+  datasource:
+    url: jdbc:postgresql://localhost:5433/arashbox
+    username: arashbox
+    password: arashbox
+    hikari:
+      connection-timeout: 10000
+
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  security:
+    oauth2:
+      client:
+        registration:
+          github:
+            client-id: ${GITHUB_CLIENT_ID}
+            client-secret: ${GITHUB_CLIENT_SECRET}
+            scope: user:email
+
+server:
+  port: 9000
+
+# Code execution settings
+arashbox:
+  execution:
+    timeout-seconds: 10
+    memory-limit-mb: 128
+    cpu-limit: 0.5
