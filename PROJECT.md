@@ -1,16 +1,16 @@
 # Arashbox
 
-Browser-based code execution sandbox. Write code, hit run, see output. Code runs in isolated Docker containers.
+Browser-based code execution sandbox. Write code, hit run, see output. Code runs in isolated Docker containers with real-time streaming output.
 
 ## Tech Stack
 
-| Layer    | Tech                                  |
-|----------|---------------------------------------|
-| Frontend | Angular 19, Monaco Editor, xterm.js   |
-| Backend  | Spring Boot 3.4, Java 17              |
-| Database | PostgreSQL 16                         |
-| Auth     | GitHub OAuth2                         |
-| Runtime  | Docker (containers per execution)     |
+| Layer    | Tech                                          |
+|----------|-----------------------------------------------|
+| Frontend | Angular 19, Monaco Editor, xterm.js, STOMP.js |
+| Backend  | Spring Boot 3.4, Java 17                      |
+| Database | PostgreSQL 16                                 |
+| Auth     | GitHub OAuth2                                 |
+| Runtime  | Docker (containers per execution)             |
 
 ## Prerequisites
 
@@ -21,60 +21,69 @@ Browser-based code execution sandbox. Write code, hit run, see output. Code runs
 
 ## Running Locally
 
-### 1. Start infrastructure
+### Quick start
 
 ```bash
+bash -c "./dev.sh"
+```
+
+This starts everything: Docker infrastructure, backend (port 9000), and frontend (port 4200).
+
+### Manual start
+
+```bash
+# 1. Start infrastructure
 docker-compose up -d
-```
 
-This starts PostgreSQL on port **5433** and Redis on port **6379**.
-
-### 2. Set environment variables
-
-Copy `.env.example` to `.env` and fill in your GitHub OAuth credentials:
-
-```
-GITHUB_CLIENT_ID=...
-GITHUB_CLIENT_SECRET=...
-```
-
-### 3. Start the backend
-
-```bash
+# 2. Start backend
 cd backend
 ./mvnw spring-boot:run
-```
 
-Runs on **http://localhost:9000**
-
-### 4. Start the frontend
-
-```bash
+# 3. Start frontend (in another terminal)
 cd frontend
 npm install
 npm start
 ```
 
-Runs on **http://localhost:4200** (proxies `/api` and `/ws` to backend)
-
-### 5. Pull Docker images for code execution
+### Pull Docker images for code execution
 
 ```bash
 docker pull python:3.12-slim
 docker pull node:20-slim
 ```
 
+### Environment variables
+
+GitHub OAuth credentials are configured in `backend/src/main/resources/application.yml`. Set these environment variables or edit the file directly:
+
+```
+GITHUB_CLIENT_ID=...
+GITHUB_CLIENT_SECRET=...
+```
+
 ## API Endpoints
 
 | Method | Endpoint                  | Auth     | Description              |
 |--------|---------------------------|----------|--------------------------|
-| POST   | `/api/execute`            | Public   | Execute code             |
+| POST   | `/api/execute`            | Public   | Execute code (REST)      |
 | GET    | `/api/health`             | Public   | Health check             |
 | GET    | `/api/snippets`           | OAuth    | List user's snippets     |
 | POST   | `/api/snippets`           | OAuth    | Save a snippet           |
 | PUT    | `/api/snippets/:id`       | OAuth    | Update a snippet         |
 | DELETE | `/api/snippets/:id`       | OAuth    | Delete a snippet         |
 | GET    | `/api/snippets/share/:id` | Public   | Get shared snippet       |
+
+## WebSocket Protocol
+
+Frontend connects via STOMP over WebSocket at `/ws/websocket`.
+
+| Direction | Destination | Payload |
+|---|---|---|
+| Client → Server | `/app/execute` | `{ sessionId, code, language, stdin }` |
+| Server → Client | `/topic/execution/{sessionId}/output` | `{ type: "stdout", data: "..." }` |
+| Server → Client | `/topic/execution/{sessionId}/output` | `{ type: "stderr", data: "..." }` |
+| Server → Client | `/topic/execution/{sessionId}/output` | `{ type: "exit", exitCode: 0, executionTimeMs: 123 }` |
+| Server → Client | `/topic/execution/{sessionId}/output` | `{ type: "error", message: "..." }` |
 
 ## Supported Languages
 
@@ -87,27 +96,32 @@ docker pull node:20-slim
 - Memory: 128MB
 - CPU: 0.5 cores
 - Network: disabled
+- Output: 64KB max
+- PIDs: 16
+- Filesystem: read-only rootfs, writable tmpfs at /tmp (10MB)
 
 ## Architecture
 
 ```
-Browser (Angular + Monaco)
+Browser (Angular + Monaco + xterm.js)
     |
-    | HTTP POST /api/execute
+    | STOMP WebSocket /ws/websocket        (or HTTP POST /api/execute fallback)
     v
 Spring Boot API
-    |
-    | Docker API (named pipe on Windows, unix socket on Linux)
+    |  - ExecutionWebSocketController       (streaming via STOMP)
+    |  - ExecutionController                (REST, synchronous)
+    |  - CodeExecutionService               (shared execution logic)
     v
-Docker Engine
+Docker Engine (named pipe on Windows, unix socket on Linux)
     |
-    | Creates ephemeral container
+    |  Code + stdin passed as base64 env vars, decoded inside container
+    |  Container command: sh -c 'printf ... | base64 -d > /tmp/code.py && ... < /tmp/stdin.txt'
     v
 [python:3.12-slim] or [node:20-slim]
     |
-    | stdout/stderr captured
+    |  stdout/stderr streamed back as OutputFrame messages
     v
-Response returned to browser
+xterm.js terminal in browser (stderr shown in red)
 ```
 
 ## Project Structure
@@ -117,18 +131,19 @@ arashbox/
   backend/
     src/main/java/com/arashbox/
       config/         - Docker, Security, WebSocket config
-      controller/     - REST endpoints
-      dto/            - Request/response objects
+      controller/     - REST + WebSocket endpoints
+      dto/            - Request/response objects (ExecutionRequest, OutputFrame, etc.)
       model/          - JPA entities
       repository/     - Data access
-      service/        - Business logic
+      service/        - Business logic (CodeExecutionService)
     src/main/resources/
       application.yml - App config
   frontend/
     src/app/
-      sandbox/        - Main editor + output component
-      services/       - HTTP services
+      sandbox/        - Main editor + terminal component
+      services/       - HTTP + WebSocket services
   docker-compose.yml  - PostgreSQL + Redis
+  dev.sh              - One-command dev startup script
 ```
 
 ## Status / Roadmap
@@ -136,18 +151,23 @@ arashbox/
 ### Done
 - [x] Monaco editor with syntax highlighting
 - [x] Python and JavaScript execution via Docker
-- [x] Resource limits (memory, CPU, timeout, no network)
+- [x] Resource limits (memory, CPU, timeout, no network, read-only rootfs)
 - [x] Container cleanup after execution
 - [x] GitHub OAuth2 login
 - [x] Snippet CRUD (save/load/delete)
 - [x] Snippet sharing via link
 - [x] Ctrl+Enter to run
 - [x] Language switching with default templates
+- [x] WebSocket-based streaming output (STOMP)
+- [x] Terminal output via xterm.js (replaces plain `<pre>` tag)
+- [x] Stdin support (input()/readline work via stdin textarea)
+- [x] Stderr displayed in red
+- [x] Exit code display
+- [x] REST fallback when WebSocket unavailable
 
 ### Planned
-- [ ] WebSocket-based streaming output
 - [ ] More languages (Go, Rust, C++, Java, etc.)
-- [ ] Terminal output via xterm.js
 - [ ] Execution history
 - [ ] Rate limiting
 - [ ] User dashboard
+- [ ] Resizable split panes
