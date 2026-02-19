@@ -30,15 +30,30 @@
   <div class="split">
     <div class="editor-pane">
       <div #editorContainer class="editor-container"></div>
+      <div class="stdin-pane">
+        <div class="stdin-header">Stdin</div>
+        <textarea
+          class="stdin-input"
+          [(ngModel)]="stdinInput"
+          placeholder="Standard input (for input()/readline)..."
+          spellcheck="false"></textarea>
+      </div>
     </div>
     <div class="output-pane">
       <div class="output-header">
         <span>Output</span>
-        @if (executionTime > 0) {
-          <span class="exec-time">{{ executionTime }}ms</span>
-        }
+        <div class="output-meta">
+          @if (exitCode !== null) {
+            <span class="exit-code" [class.exit-error]="exitCode !== 0">
+              exit {{ exitCode }}
+            </span>
+          }
+          @if (executionTime > 0) {
+            <span class="exec-time">{{ executionTime }}ms</span>
+          }
+        </div>
       </div>
-      <pre #outputContainer class="output-content">{{ output }}</pre>
+      <div #terminalContainer class="terminal-container"></div>
     </div>
   </div>
 </div>

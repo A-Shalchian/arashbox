@@ -5,6 +5,7 @@ import { Observable } from 'rxjs';
 export interface ExecutionRequest {
   code: string;
   language: string;
+  stdin?: string;
 }
 
 export interface ExecutionResponse {
